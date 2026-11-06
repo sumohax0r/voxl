@@ -812,6 +812,31 @@ mod tests {
         assert!(resized);
     }
 
+    /// #86's goal under this build's rules: two windows of different sizes don't take
+    /// turns resizing the desktop. Only the viewer in control sizes it (#71), and
+    /// after a handoff the new controller's window does.
+    #[test]
+    fn two_viewers_of_different_sizes_settle_on_one_size() {
+        let (s, _input, _mic) = app(false);
+        let (a, _ra) = connect(&s);
+        let (b, _rb) = connect(&s);
+        let owner = || s.hub.resize_owner.load(Ordering::Relaxed);
+        send(&s, &a, &["sz,1000,800"]);
+        assert_eq!(owner(), a.id);
+        assert!(s.hub.resize_req.lock().take().is_some());
+        // B's window answers each hello with its own size; it's dropped every time.
+        for _ in 0..3 {
+            send(&s, &b, &["sz,1400,900"]);
+            assert_eq!(owner(), a.id);
+            assert_eq!(*s.hub.resize_req.lock(), None);
+        }
+        // Once B is in control, its page sends its size again, and the desktop
+        // follows B's window from then on.
+        send(&s, &a, &[&format!("cg,{}", b.id)]);
+        send(&s, &b, &["sz,1400,900"]);
+        assert_eq!(owner(), b.id);
+    }
+
     #[test]
     fn favicon_uses_file_extension_for_content_type() {
         let (bytes, content_type) = favicon(None).unwrap();
