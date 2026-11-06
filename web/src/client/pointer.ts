@@ -109,6 +109,13 @@ export function setupPointer(
 			tp.cancel(e);
 		} else send(cmd.releaseAll);
 	});
+	// Other viewers stop drawing this viewer's pointer once it leaves the desktop.
+	surface.addEventListener('pointerleave', (e) => {
+		if (e.pointerType !== 'touch') {
+			lastMove = '';
+			send(cmd.pointerGone);
+		}
+	});
 	surface.addEventListener('contextmenu', (e) => e.preventDefault());
 	surface.addEventListener(
 		'wheel',
