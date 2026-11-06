@@ -22,7 +22,7 @@ pub struct AppState {
     pub epoch: Instant,
     pub files: Arc<crate::files::Files>,
     pub mic: Option<std::sync::mpsc::Sender<crate::mic::MicMsg>>,
-    /// Clients may resize the desktop to their window (--enable-resize).
+    /// Resizing was enabled; hub.resize_max tracks the current display's capability.
     pub resize: bool,
     /// Viewers only watch: input, clipboard writes and the microphone are refused (--read-only).
     pub read_only: bool,
@@ -214,7 +214,16 @@ async fn handle_socket(socket: WebSocket, s: AppState) {
     use futures_util::{SinkExt, StreamExt};
     let (mut sink, mut stream) = socket.split();
     let (tx, mut rx) = mpsc::unbounded_channel::<Out>();
-    let client = s.hub.add_client(tx);
+    let client = {
+        // New connections must not receive the old geometry during a display change.
+        #[cfg(target_os = "macos")]
+        let input = s.hub.input.lock();
+        #[cfg(target_os = "macos")]
+        if input.is_none() && s.hub.input_floor.load(Ordering::Relaxed) != 0 {
+            return;
+        }
+        s.hub.add_client(tx)
+    };
     log::info!("client {} connected", client.id);
     client.send(Out::Text(s.hub.hello()));
     // A person at the page, listed for the others. The first is in control; with
@@ -281,11 +290,11 @@ async fn handle_socket(socket: WebSocket, s: AppState) {
                     && s.hub.in_control(client.id)
                     && s.settings.clip_in() =>
             {
-                if let Some(tx) = s.hub.input.lock().as_ref() {
-                    let _ = tx.send(InputEvent::Clipboard(crate::desktop::ClipContent::Image(
-                        b[1..].to_vec(),
-                    )));
-                }
+                send_input(
+                    &s.hub,
+                    &client,
+                    InputEvent::Clipboard(crate::desktop::ClipContent::Image(b[1..].to_vec())),
+                );
             }
             // 0x12: microphone Opus packet, 0x13: microphone PCM (s16le mono 48 kHz).
             Message::Binary(b) if matches!(b.first(), Some(0x12 | 0x13)) && b.len() > 1 => {
@@ -306,9 +315,7 @@ async fn handle_socket(socket: WebSocket, s: AppState) {
     writer.abort();
     // Let go of what this viewer held down, unless someone else is driving.
     if s.hub.in_control(client.id) {
-        if let Some(tx) = s.hub.input.lock().as_ref() {
-            let _ = tx.send(InputEvent::ReleaseAll);
-        }
+        send_input(&s.hub, &client, InputEvent::ReleaseAll);
     }
     if let Some(tx) = &s.mic {
         let _ = tx.send(crate::mic::MicMsg::Stop(client.id));
@@ -348,7 +355,21 @@ fn pointer_msg(id: u64, at: Option<(i32, i32)>) -> String {
 
 /// Commands that act on the desktop, accepted only from the viewer in control.
 /// Settings (`set`) are among them: they change the stream for everyone.
-const CONTROL_COMMANDS: &[&str] = &["m", "b", "s", "sp", "k", "r", "c", "sz", "set"];
+/// So is switching displays (`ds`, macOS), which changes the screen for everyone.
+const CONTROL_COMMANDS: &[&str] = &["m", "b", "s", "sp", "k", "r", "c", "sz", "set", "ds"];
+
+fn send_input(hub: &Hub, client: &Client, event: InputEvent) {
+    let input = hub.input.lock();
+    #[cfg(target_os = "macos")]
+    if client.id < hub.input_floor.load(Ordering::Relaxed) {
+        return;
+    }
+    #[cfg(not(target_os = "macos"))]
+    let _ = client;
+    if let Some(tx) = input.as_ref() {
+        let _ = tx.send(event);
+    }
+}
 
 /// Commands a --read-only viewer may send: acks, video and audio on/off, keyframe
 /// requests and ping replies. Everything else acts on the desktop (input, clipboard,
@@ -363,11 +384,7 @@ fn handle_text(s: &AppState, c: &Arc<Client>, t: &str, rtts: &mut std::collectio
     if s.read_only && !READ_ONLY_COMMANDS.contains(&cmd) {
         return;
     }
-    let input = |ev: InputEvent| {
-        if let Some(tx) = s.hub.input.lock().as_ref() {
-            let _ = tx.send(ev);
-        }
-    };
+    let input = |ev| send_input(&s.hub, c, ev);
     let mut it = rest.split(',');
     // Every viewer's pointer is shown to the others, but only the one in control moves
     // the desktop's.
@@ -402,6 +419,22 @@ fn handle_text(s: &AppState, c: &Arc<Client>, t: &str, rtts: &mut std::collectio
                 if s.hub.give_control(c.id, to) {
                     log::info!("client {} gave control to client {to}", c.id);
                     s.hub.send_users();
+                }
+            }
+        }
+        #[cfg(target_os = "macos")]
+        "ds" => {
+            if let Ok(id) = rest.parse() {
+                match crate::mac::request_display(&s.hub, id, c.id) {
+                    Ok(true) => {}
+                    result => {
+                        if let Err(e) = result {
+                            log::warn!("display switch: {e}");
+                        }
+                        c.needs_keyframe.store(true, Ordering::Relaxed);
+                        c.send(Out::Text(s.hub.hello()));
+                        s.hub.wake();
+                    }
                 }
             }
         }
@@ -480,6 +513,12 @@ fn handle_text(s: &AppState, c: &Arc<Client>, t: &str, rtts: &mut std::collectio
         // The latest request wins; the video thread clamps it and applies it.
         // Unless the settings panel turned Auto rescale off.
         "sz" if s.resize && s.settings.auto_resize() => {
+            #[cfg(target_os = "macos")]
+            let input = s.hub.input.lock();
+            #[cfg(target_os = "macos")]
+            if input.is_none() || c.id < s.hub.input_floor.load(Ordering::Relaxed) {
+                return;
+            }
             if let (Some(w), Some(h), Some(max)) = (
                 num::<u32>(&mut it),
                 num::<u32>(&mut it),
@@ -546,6 +585,7 @@ mod tests {
         "cr,1",
         "cg,1",
         "set,audio_bitrate,64000",
+        "ds,4294967295",
     ];
 
     /// Sends every command to a server that has input, a microphone and resizing wired
@@ -853,5 +893,56 @@ mod tests {
         assert!(favicon(Some(dir.join("icon.txt").to_str().unwrap())).is_err());
         assert!(favicon(Some(dir.join("missing.ico").to_str().unwrap())).is_err());
         std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn display_switch_drains_input_and_retires_old_connections() {
+        let hub = Hub::new();
+        let (sender, events) = std::sync::mpsc::channel();
+        *hub.input.lock() = Some(sender);
+        let (out, _messages) = mpsc::unbounded_channel();
+        let old = hub.add_client(out);
+        send_input(&hub, &old, InputEvent::Move { x: 1, y: 2 });
+        let request = hub.pause_display_input(20, old.id).unwrap();
+        assert!(
+            hub.clients.lock().is_empty(),
+            "old subscriptions were not retired"
+        );
+        assert!(matches!(
+            events.try_recv(),
+            Ok(InputEvent::Move { x: 1, y: 2 })
+        ));
+        let InputEvent::DisplayBarrier(done) = events.try_recv().unwrap() else {
+            panic!("missing input barrier")
+        };
+        send_input(
+            &hub,
+            &old,
+            InputEvent::Key {
+                keysym: 65,
+                down: true,
+            },
+        );
+        assert!(
+            events.try_recv().is_err(),
+            "input entered while capture was changing"
+        );
+        done.send(()).unwrap();
+        request.ready.recv().unwrap();
+        *hub.input.lock() = Some(request.sender);
+        send_input(&hub, &old, InputEvent::Move { x: 100, y: 200 });
+        assert!(
+            events.try_recv().is_err(),
+            "an old connection used the new geometry"
+        );
+        assert!(hub.pause_display_input(30, old.id).is_none());
+        let (out, _messages) = mpsc::unbounded_channel();
+        let fresh = hub.add_client(out);
+        send_input(&hub, &fresh, InputEvent::Move { x: 3, y: 4 });
+        assert!(matches!(
+            events.try_recv(),
+            Ok(InputEvent::Move { x: 3, y: 4 })
+        ));
     }
 }

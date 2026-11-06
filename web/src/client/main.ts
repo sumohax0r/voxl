@@ -31,11 +31,21 @@ const READ_ONLY_COMMANDS = new Set(['a', 'v', 'au', 'kf', 'po']);
  * control (CONTROL_COMMANDS in server.rs). Pointer moves still go out: the other
  * viewers see this viewer's pointer either way.
  */
-const CONTROL_COMMANDS = new Set(['b', 's', 'sp', 'k', 'r', 'c', 'sz', 'set']);
+const CONTROL_COMMANDS = new Set([
+	'b',
+	's',
+	'sp',
+	'k',
+	'r',
+	'c',
+	'sz',
+	'set',
+	'ds',
+]);
 
 function blocksInput(app: App, command: string): boolean {
 	const name = command.split(',')[0];
-	if (app.readOnly) return !READ_ONLY_COMMANDS.has(name);
+	if (app.readOnly || !app.desk.w) return !READ_ONLY_COMMANDS.has(name);
 	return !app.inControl && CONTROL_COMMANDS.has(name);
 }
 
@@ -75,7 +85,7 @@ function main() {
 		sendBin: (type, bytes) => {
 			// The server drops every binary message from read-only viewers, and
 			// clipboard images from viewers not in control.
-			if (app.readOnly) return;
+			if (app.readOnly || !app.desk.w) return;
 			if (!app.inControl && type === Bin.ClipImageUp) return;
 			const msg = new Uint8Array(bytes.byteLength + 1);
 			msg[0] = type;
@@ -203,6 +213,7 @@ function main() {
 				settings.setDesk(m.w, m.h);
 				files.setup(m.files);
 				mic.setup(!!m.mic && !app.readOnly);
+				toolbar.updateDisplays(m.displays);
 				// Each resolution change brings a hello: follow the window only on Auto.
 				scale = autoResize ? m.resize?.scale : undefined;
 				resize.setup(scale === undefined ? undefined : { scale });
@@ -210,6 +221,7 @@ function main() {
 				break;
 			case 'status':
 				if (m.s === 'closed') {
+					app.desk.w = 0;
 					mic.stop();
 					users.reset();
 					statusEl.style.display = '';

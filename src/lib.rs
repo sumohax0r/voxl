@@ -145,6 +145,8 @@ async fn serve(a: HashMap<String, String>) {
         .unwrap_or(4) as u32;
     let vcfg = video::VideoConfig {
         display: display.clone(),
+        #[cfg(target_os = "macos")]
+        enable_resize: truthy(a.get("enable-resize"), false) && !truthy(a.get("read-only"), false),
         fps: range_max(a.get("framerate"), 60.0) as u32,
         preset: a
             .get("preset")
@@ -368,7 +370,7 @@ async fn serve(a: HashMap<String, String>) {
         epoch: Instant::now(),
         files,
         mic,
-        resize: resize_on,
+        resize: enable_resize && !read_only,
         read_only,
         recorder,
         settings,

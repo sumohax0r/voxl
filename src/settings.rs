@@ -405,6 +405,8 @@ mod tests {
             stripes: 1,
             adaptive_threads: false,
             auto_quality: true,
+            #[cfg(target_os = "macos")]
+            enable_resize: false,
         });
         hub.audio_bitrate.store(128000, Ordering::Relaxed);
         hub.audio_auto.store(128000, Ordering::Relaxed);

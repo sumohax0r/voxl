@@ -45,6 +45,8 @@ export interface Hello {
 	readOnly?: boolean;
 	/** Dynamic resolution: desktop pixels per CSS pixel of the viewer's window. */
 	resize?: { scale: number };
+	/** macOS: one shared display, selected by its CoreGraphics ID. */
+	displays?: { selected: number; available: { id: number; name: string }[] };
 }
 
 /** JSON text messages from the server. */
@@ -118,6 +120,7 @@ export const cmd = {
 	/** Ask for a desktop of this size (dynamic resolution). */
 	resize: (w: number, h: number, recheck = false) =>
 		`sz,${w},${h}${recheck ? ',p' : ''}`,
+	display: (id: number) => `ds,${id}`,
 	keyframe: 'kf',
 	/** This viewer's pointer left the desktop. */
 	pointerGone: 'ph',
