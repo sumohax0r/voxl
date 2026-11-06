@@ -390,6 +390,8 @@ mod tests {
     fn settings(upload: bool, max_upload_bytes: u64) -> Arc<Settings> {
         let hub = Hub::new();
         *hub.video_cfg.lock() = Some(crate::video::VideoConfig {
+            #[cfg(target_os = "linux")]
+            wayland: None,
             display: None,
             fps: 60,
             preset: "ultrafast".into(),

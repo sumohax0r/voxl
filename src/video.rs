@@ -13,6 +13,8 @@ use std::time::{Duration, Instant};
 
 #[derive(Clone)]
 pub struct VideoConfig {
+    #[cfg(target_os = "linux")]
+    pub wayland: Option<crate::wayland::Config>,
     pub display: Option<String>,
     #[cfg(target_os = "macos")]
     pub enable_resize: bool,
@@ -306,11 +308,15 @@ fn switch_display(
 }
 
 fn build(cfg: &VideoConfig, hub: &Arc<Hub>) -> Result<Pipeline, String> {
-    let cap = {
-        #[cfg(target_os = "macos")]
-        let _turn = capture_turn();
-        Capturer::new(cfg.display.as_deref())?
-    };
+    // macOS: take a turn with other voxl processes (capture_turn); Linux: X11 or Wayland.
+    #[cfg(target_os = "macos")]
+    let turn = capture_turn();
+    #[cfg(target_os = "linux")]
+    let cap = Capturer::new(cfg.display.as_deref(), cfg.wayland.as_ref())?;
+    #[cfg(not(target_os = "linux"))]
+    let cap = Capturer::new(cfg.display.as_deref())?;
+    #[cfg(target_os = "macos")]
+    drop(turn);
     let (w, h) = (cap.width, cap.height);
     hub.width.store(w, Ordering::Relaxed);
     hub.height.store(h, Ordering::Relaxed);
