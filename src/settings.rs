@@ -409,6 +409,7 @@ mod tests {
             auto_quality: true,
             #[cfg(target_os = "macos")]
             enable_resize: false,
+            hardware: false,
         });
         hub.audio_bitrate.store(128000, Ordering::Relaxed);
         hub.audio_auto.store(128000, Ordering::Relaxed);
