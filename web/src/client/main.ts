@@ -1,7 +1,7 @@
 // Main thread: layout, input capture, cursor, clipboard, files, microphone and audio.
 // Video decode/paint and the socket live in the worker (worker.ts).
 import { Bin, cmd } from '../protocol';
-import type { FromWorker, ToWorker } from '../protocol';
+import type { FilesConfig, FromWorker, ToWorker } from '../protocol';
 import type { App } from './app';
 import { el } from './app';
 import { createAudio } from './audio';
@@ -12,6 +12,7 @@ import { setupKeyboard } from './keyboard';
 import { createMic } from './mic';
 import { setupPointer } from './pointer';
 import { createResize } from './resize';
+import { createSettings, savedStats } from './settings';
 import { setupToolbar } from './toolbar';
 import { createUsers } from './users';
 import { createVideo } from './video';
@@ -30,7 +31,7 @@ const READ_ONLY_COMMANDS = new Set(['a', 'v', 'au', 'kf', 'po']);
  * control (CONTROL_COMMANDS in server.rs). Pointer moves still go out: the other
  * viewers see this viewer's pointer either way.
  */
-const CONTROL_COMMANDS = new Set(['b', 's', 'sp', 'k', 'r', 'c', 'sz']);
+const CONTROL_COMMANDS = new Set(['b', 's', 'sp', 'k', 'r', 'c', 'sz', 'set']);
 
 function blocksInput(app: App, command: string): boolean {
 	const name = command.split(',')[0];
@@ -110,12 +111,50 @@ function main() {
 	const toolbar = setupToolbar(app, video.layout);
 	const files = createFiles(app);
 	const mic = createMic(app);
-	const resize = createResize(app);
-	/** The hello's dynamic resolution setup, sent again when control comes here. */
-	let resizeCfg: { scale: number } | undefined;
+	// The page is on the screen it shows: following its window would shrink the
+	// desktop to its smallest mode, so Auto holds the host's own resolution instead.
+	const resize = createResize(app, () => {
+		settings.sameScreen();
+		holdNative();
+	});
+	/** Auto on the host's own screen is in effect (and native was asked for). */
+	let holding = false;
+	/**
+	 * Auto on the host's own screen: keep the host's resolution. Sent once, on
+	 * entering that state, and as a recheck: the server follows it only if no other
+	 * viewer's window is being followed, so a remote viewer on Auto keeps the desktop.
+	 */
+	function holdNative() {
+		const hold = autoResize && resize.sameScreen;
+		const [w, h] = native.split('x').map(Number);
+		if (hold && !holding && w && h) app.send(cmd.resize(w, h, true));
+		holding = hold;
+	}
+	/**
+	 * The desktop follows this window (Auto resolution). Until the settings say, as
+	 * the server starts: on. Off, a new hello doesn't make the page follow again.
+	 */
+	let autoResize = true;
+	/** The host's own resolution, from the latest settings. */
+	let native = '';
+	// ?stats, or the settings panel's switch, shows the stats overlay.
+	let showStats = params.has('stats') || savedStats();
+	const settings = createSettings(app, {
+		closeFiles: files.close,
+		onStats: (on) => {
+			showStats = on || params.has('stats');
+			if (!showStats) statsEl.style.display = 'none';
+		},
+	});
+	/** The hello's Files setup; the settings panel can turn transfers off. */
+	let filesCfg: FilesConfig | undefined;
+	/** Desktop pixels per CSS pixel (dynamic resolution), from the hello or settings. */
+	let scale: number | undefined;
 	// The desktop took the previous controller's window size; the size this window
 	// asked for while watching was dropped (only the viewer in control resizes).
-	const users = createUsers(app, toolbar.show, () => resize.setup(resizeCfg));
+	const users = createUsers(app, toolbar.show, () =>
+		resize.setup(scale === undefined ? undefined : { scale })
+	);
 
 	const offscreen = canvas.transferControlToOffscreen();
 	post(
@@ -160,10 +199,13 @@ function main() {
 				app.tools.classList.toggle('read-only', app.readOnly);
 				video.build(m.stripes && m.stripes.length ? m.stripes : [[0, m.h]]);
 				video.layout();
+				filesCfg = m.files;
+				settings.setDesk(m.w, m.h);
 				files.setup(m.files);
 				mic.setup(!!m.mic && !app.readOnly);
-				resizeCfg = m.resize;
-				resize.setup(m.resize);
+				// Each resolution change brings a hello: follow the window only on Auto.
+				scale = autoResize ? m.resize?.scale : undefined;
+				resize.setup(scale === undefined ? undefined : { scale });
 				statusEl.style.display = 'none';
 				break;
 			case 'status':
@@ -186,9 +228,41 @@ function main() {
 				break;
 			case 'users':
 				users.onUsers(m);
+				// Only the viewer in control can change settings.
+				settings.refresh();
 				break;
 			case 'pc':
 				users.onPointer(m);
+				break;
+			case 'settings': {
+				native = m.limits.native;
+				settings.update(m);
+				const v = m.values;
+				if (filesCfg)
+					files.setup({
+						...filesCfg,
+						upload: v.upload === true,
+						download: v.download === true,
+					});
+				// Auto resolution on: follow this window (at the panel's scale); off: stop.
+				autoResize = v.auto_resize === true;
+				const want =
+					autoResize && typeof v.resize_scale === 'number'
+						? v.resize_scale
+						: undefined;
+				if (want !== scale) {
+					scale = want;
+					resize.setup(scale === undefined ? undefined : { scale });
+				}
+				// The settings can arrive after the hello that found this page on the host.
+				if (resize.sameScreen) {
+					settings.sameScreen();
+					holdNative();
+				}
+				break;
+			}
+			case 'settingsError':
+				settings.onError(m.key, m.error);
 				break;
 			case 'mic':
 				if (!m.on) mic.stop();
@@ -196,7 +270,7 @@ function main() {
 			case 'stats':
 				window.fps = Math.round(m.fps);
 				window.voxlStats = m;
-				if (params.has('stats')) {
+				if (showStats) {
 					statsEl.style.display = 'block';
 					statsEl.textContent =
 						`${m.fps.toFixed(1)} fps  ${(m.kbps / 1000).toFixed(2)} Mbps\n` +

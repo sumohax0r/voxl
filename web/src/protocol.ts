@@ -55,6 +55,8 @@ export type ServerMessage =
 	| { t: 'mic'; on: boolean }
 	| Users
 	| PeerPointer
+	| SettingsMessage
+	| { t: 'settingsError'; key: string; error: string }
 	| { t: 'close' };
 
 /** Who is connected, who is in control (null: nobody, as with --read-only) and who asked. */
@@ -73,6 +75,33 @@ export interface PeerPointer {
 	y?: number;
 }
 
+/** Server settings the toolbar's panel shows and changes (src/settings.rs). */
+export interface SettingsMessage {
+	t: 'settings';
+	/** Current values by key; null when a setting doesn't apply (resize_scale). */
+	values: Record<string, number | string | boolean | null>;
+	/** What the flags allow: settings can be narrowed from these, never widened. */
+	limits: {
+		audio: boolean;
+		resize: boolean;
+		clipboard_in: boolean;
+		clipboard_out: boolean;
+		upload: boolean;
+		download: boolean;
+		/** 0: no limit. */
+		max_upload_mb: number;
+		max_record_seconds: number;
+		/** Desktop sizes the resolution menu offers, as "WxH" (with dynamic resolution). */
+		resolutions: string[];
+		/** The desktop's size when voxl started: the host's own, as "WxH". */
+		native: string;
+		/** --resize-scale: desktop pixels per CSS pixel at 100% scaling. */
+		scale_default: number | null;
+	};
+	/** Keys whose change restarts the stream. */
+	restart: string[];
+}
+
 /** Text commands to the server. */
 export const cmd = {
 	ack: (frame: number) => `a,${frame}`,
@@ -87,7 +116,8 @@ export const cmd = {
 	audio: (on: boolean) => `au,${on ? 1 : 0}`,
 	mic: (on: boolean) => `mi,${on ? 1 : 0}`,
 	/** Ask for a desktop of this size (dynamic resolution). */
-	resize: (w: number, h: number) => `sz,${w},${h}`,
+	resize: (w: number, h: number, recheck = false) =>
+		`sz,${w},${h}${recheck ? ',p' : ''}`,
 	keyframe: 'kf',
 	/** This viewer's pointer left the desktop. */
 	pointerGone: 'ph',
@@ -95,6 +125,8 @@ export const cmd = {
 	requestControl: (on: boolean) => `cr,${on ? 1 : 0}`,
 	/** Hand control to another viewer (only the viewer in control may). */
 	giveControl: (id: number) => `cg,${id}`,
+	/** Change a server setting (the settings panel). */
+	set: (key: string, value: string | number | boolean) => `set,${key},${value}`,
 	pong: (sent: number) => `po,${sent}`,
 } as const;
 

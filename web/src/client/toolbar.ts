@@ -1,5 +1,5 @@
 // Toolbar (top right on hover; bottom right and always visible on touch devices):
-// people here, on-screen keyboard, files, microphone and fullscreen buttons.
+// people here, on-screen keyboard, files, microphone, settings and fullscreen buttons.
 import type { App } from './app';
 import { el } from './app';
 
