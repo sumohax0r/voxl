@@ -1,0 +1,31 @@
+Voxl combined Windows build (x64)
+
+Includes the combined desktop features and OS-account authentication.
+See BUILD-INFO.txt for the exact source revision and SHA256SUMS.txt for integrity.
+This executable is not code-signed.
+
+Deploy to WG-S002 using your existing RDP connection:
+1. Keep RDP available during the update.
+2. Stop the VoxlSystemSupervisor scheduled task, then stop voxl.exe.
+3. Back up C:\ProgramData\Voxl\voxl.exe and start-voxl.ps1.
+4. Replace C:\ProgramData\Voxl\voxl.exe with the executable from this package.
+5. In start-voxl.ps1, preserve the existing video/resize/host/port options and add:
+      --auth-mode=os --auth-users=ai
+   Use the exact Windows account name you intend to allow. You can remove the
+   legacy --basic-auth-password option; OS mode ignores it and URL tokens.
+   Keep --enable-resize=true and the current SYSTEM session supervisor.
+6. Start VoxlSystemSupervisor again.
+7. Open https://voxl.wholesomegoods.com/ with no token. Sign in using the Windows
+   account password (not its PIN). Verify video, input, resizing, and Lock session.
+
+The existing HTTPS proxy must preserve the Host and WebSocket Origin headers.
+Secure cookies are enabled by default. Do not disable them for the public site.
+
+Advanced login options control session duration and inactivity locking.
+Locking ends the browser session, not Windows itself or other viewers' sessions.
+OS authentication grants access to the existing shared desktop; it does not create
+separate Windows sessions. It does not change RDP settings or OS account passwords.
+
+Rollback: stop the supervisor and voxl.exe, restore the backed-up executable and
+launcher, then start the supervisor again. Keep both backups until sign-in and
+normal desktop operation have been verified on the host.

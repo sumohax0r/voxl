@@ -1,0 +1,92 @@
+name: Combined Windows build
+on:
+  push:
+    branches: ['build/combined-windows-*']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  windows:
+    runs-on: windows-latest
+    timeout-minutes: 60
+    env:
+      VCPKGRS_TRIPLET: x64-windows-static-md
+      VCPKG_BINARY_SOURCES: clear;files,${{ github.workspace }}\vcpkg-cache,readwrite
+      LIBCLANG_PATH: C:\Program Files\LLVM\bin
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - uses: actions/cache@v4
+        with:
+          path: vcpkg-cache
+          key: vcpkg-${{ runner.os }}-x264-libyuv-opus-v1
+      - name: Native libraries and web build tools
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force vcpkg-cache | Out-Null
+          vcpkg install x264 libyuv opus --triplet $env:VCPKGRS_TRIPLET
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          "VCPKG_ROOT=$env:VCPKG_INSTALLATION_ROOT" >> $env:GITHUB_ENV
+          npm install -g esbuild
+          npm ci
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: cargo-combined-${{ runner.os }}-${{ hashFiles('Cargo.lock') }}
+          restore-keys: cargo-combined-${{ runner.os }}-
+      - name: Web checks
+        run: npm run check
+      - name: Rust formatting
+        run: cargo fmt --check
+      - name: Rust lint
+        run: cargo clippy --all-targets --locked -- -D warnings
+      - name: Windows unit tests
+        run: cargo test --release --locked
+      - name: Native Windows password and disabled-account tests
+        shell: pwsh
+        run: |
+          $name = 'voxlci'
+          $password = 'Vx1!' + [guid]::NewGuid().ToString('N')
+          Write-Output "::add-mask::$password"
+          New-LocalUser -Name $name -Password (ConvertTo-SecureString $password -AsPlainText -Force) | Out-Null
+          try {
+            $env:VOXL_TEST_OS_USER = $name
+            $env:VOXL_TEST_OS_PASSWORD = $password
+            cargo test --release --locked os_auth::tests::native_account -- --ignored
+            if ($LASTEXITCODE -ne 0) { throw 'Native password verification failed' }
+            Disable-LocalUser -Name $name
+            $env:VOXL_TEST_ACCOUNT_DISABLED = '1'
+            cargo test --release --locked os_auth::tests::native_account -- --ignored
+            if ($LASTEXITCODE -ne 0) { throw 'Disabled account verification failed' }
+          } finally {
+            Remove-LocalUser -Name $name
+            Remove-Item Env:\VOXL_TEST_OS_PASSWORD -ErrorAction SilentlyContinue
+          }
+      - name: Build executable
+        run: cargo build --release --locked
+      - name: Package executable and deployment instructions
+        shell: pwsh
+        run: |
+          .\target\release\voxl.exe --help
+          if ($LASTEXITCODE -ne 0) { throw 'Executable help check failed' }
+          New-Item -ItemType Directory -Force dist | Out-Null
+          Copy-Item target\release\voxl.exe dist\voxl.exe
+          Copy-Item packaging\WINDOWS-DEPLOY.txt dist\README.txt
+          @("Source: https://github.com/${{ github.repository }}", "Commit: $env:GITHUB_SHA", "Branch: $env:GITHUB_REF_NAME", "Target: x86_64-pc-windows-msvc", "Includes: combined, main, multi-user-presence, settings-panel, os-account-login", "Built: $([DateTime]::UtcNow.ToString('o'))") | Set-Content dist\BUILD-INFO.txt
+          $hash = (Get-FileHash dist\voxl.exe -Algorithm SHA256).Hash.ToLower()
+          "$hash  voxl.exe" | Set-Content dist\SHA256SUMS.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: voxl-windows-combined-${{ github.sha }}
+          path: dist/*
+          if-no-files-found: error
+          retention-days: 90

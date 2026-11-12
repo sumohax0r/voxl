@@ -157,3 +157,31 @@ pub fn verify(user: &str, password: &str, _service: &str) -> bool {
     }
     ok
 }
+
+#[cfg(test)]
+mod tests {
+    /// Opt-in native verification against a disposable test account. CI creates and
+    /// deletes that account; no real user's password is embedded in the test binary.
+    #[test]
+    #[ignore = "requires a disposable OS account supplied through environment variables"]
+    fn native_account() {
+        let user = std::env::var("VOXL_TEST_OS_USER").expect("test account name");
+        let password = std::env::var("VOXL_TEST_OS_PASSWORD").expect("test account password");
+        let service = std::env::var("VOXL_TEST_PAM_SERVICE").unwrap_or_else(|_| "voxl".into());
+        if std::env::var_os("VOXL_TEST_ACCOUNT_DISABLED").is_some() {
+            assert!(
+                !super::verify(&user, &password, &service),
+                "disabled account admitted"
+            );
+        } else {
+            assert!(
+                super::verify(&user, &password, &service),
+                "valid account rejected"
+            );
+            assert!(
+                !super::verify(&user, &format!("{password}-incorrect"), &service),
+                "wrong password admitted"
+            );
+        }
+    }
+}
