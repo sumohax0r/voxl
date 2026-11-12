@@ -1,1 +1,2 @@
-bench/**/*.html linguist-detectable=false
+# Keep source formatting identical on Windows, macOS and Linux.
+* text=auto eol=lf

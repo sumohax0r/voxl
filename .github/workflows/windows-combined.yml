@@ -22,7 +22,8 @@ jobs:
         with:
           node-version: 22
           cache: npm
-      - uses: actions/cache@v4
+      - uses: actions/cache/restore@v4
+        id: native-cache
         with:
           path: vcpkg-cache
           key: vcpkg-${{ runner.os }}-x264-libyuv-opus-v1
@@ -35,6 +36,11 @@ jobs:
           "VCPKG_ROOT=$env:VCPKG_INSTALLATION_ROOT" >> $env:GITHUB_ENV
           npm install -g esbuild
           npm ci
+      - uses: actions/cache/save@v4
+        if: steps.native-cache.outputs.cache-hit != 'true'
+        with:
+          path: vcpkg-cache
+          key: vcpkg-${{ runner.os }}-x264-libyuv-opus-v1
       - uses: actions/cache@v4
         with:
           path: |
