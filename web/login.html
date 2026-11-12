@@ -1,0 +1,163 @@
+<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<meta name="referrer" content="no-referrer" />
+		<title>Sign in · Voxl</title>
+		<style>
+			:root {
+				color-scheme: dark;
+				font-family: system-ui, sans-serif;
+				background: #141619;
+				color: #f2f3f5;
+			}
+			* {
+				box-sizing: border-box;
+			}
+			body {
+				margin: 0;
+				min-height: 100dvh;
+				display: grid;
+				place-items: center;
+				padding: 24px;
+			}
+			main {
+				width: 100%;
+				max-width: 420px;
+				background: #202328;
+				border: 1px solid #383d45;
+				border-radius: 18px;
+				padding: 32px;
+				box-shadow: 0 24px 80px #0005;
+			}
+			h1 {
+				font-size: 25px;
+				margin: 0 0 8px;
+			}
+			.intro,
+			p {
+				color: #b8bec7;
+				font-size: 14px;
+				line-height: 1.5;
+			}
+			.intro {
+				margin: 0 0 26px;
+			}
+			label {
+				display: block;
+				font-size: 14px;
+				margin: 18px 0 7px;
+			}
+			input,
+			select,
+			button {
+				width: 100%;
+				font: inherit;
+				border-radius: 8px;
+				padding: 12px;
+				background: #141619;
+				color: inherit;
+				border: 1px solid #505762;
+			}
+			input:focus-visible,
+			select:focus-visible,
+			button:focus-visible,
+			summary:focus-visible {
+				outline: 2px solid #82b4ff;
+				outline-offset: 3px;
+			}
+			details {
+				margin: 24px 0;
+			}
+			summary {
+				cursor: pointer;
+				color: #cdd3dc;
+				font-size: 14px;
+			}
+			details p {
+				font-size: 12px;
+				margin-bottom: 0;
+			}
+			button {
+				background: #91baff;
+				border-color: #91baff;
+				color: #101b2d;
+				font-weight: 650;
+				cursor: pointer;
+			}
+			button:disabled {
+				opacity: 0.5;
+				cursor: wait;
+			}
+			#error {
+				color: #ffb6ad;
+				min-height: 1.5em;
+				margin: 12px 0;
+			}
+			footer {
+				font-size: 12px;
+				color: #939daa;
+				line-height: 1.5;
+				margin-top: 22px;
+			}
+		</style>
+		<script src="/auth/login.js" defer></script>
+	</head>
+	<body>
+		<main>
+			<h1>Sign in to Voxl</h1>
+			<p class="intro">Use an operating-system account on this host.</p>
+			<form id="login">
+				<label for="username">Username</label
+				><input
+					id="username"
+					name="username"
+					autocomplete="username"
+					required
+					maxlength="256"
+					autofocus
+					spellcheck="false"
+					autocapitalize="none" />
+				<label for="password">Password</label
+				><input
+					id="password"
+					name="password"
+					type="password"
+					autocomplete="current-password"
+					required
+					maxlength="4096" />
+				<details>
+					<summary>Advanced options</summary>
+					<label for="duration">Session stays valid for</label
+					><select id="duration" name="duration">
+						<option value="900">15 minutes</option>
+						<option value="3600">1 hour</option>
+						<option value="28800" selected>8 hours</option>
+						<option value="86400">1 day</option>
+						<option value="604800">7 days</option>
+					</select>
+					<label for="idle">Automatically lock after inactivity</label
+					><select id="idle" name="idle">
+						<option value="60">1 minute</option>
+						<option value="300">5 minutes</option>
+						<option value="900" selected>15 minutes</option>
+						<option value="1800">30 minutes</option>
+						<option value="3600">1 hour</option>
+					</select>
+					<p>
+						Locking ends this browser’s Voxl session and requires your password
+						again. It does not lock the host or disconnect other viewers.
+						Session expiration applies even while you are active.
+					</p>
+				</details>
+				<p id="error" role="alert" aria-live="polite"></p>
+				<button type="submit">Sign in</button>
+			</form>
+			<footer>
+				Your password is checked by the host operating system. Windows accounts
+				use their password, not a Windows Hello PIN.
+			</footer>
+		</main>
+	</body>
+</html>

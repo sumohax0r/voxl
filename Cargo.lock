@@ -1608,6 +1608,7 @@ dependencies = [
  "serde",
  "serde_json",
  "tokio",
+ "tower",
  "vcpkg",
  "wayland-client",
  "wayland-protocols",

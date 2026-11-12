@@ -3,6 +3,7 @@
   rustPlatform,
   pkg-config,
   x264,
+  pam,
   libyuv,
   libopus,
   libpulseaudio,
@@ -42,6 +43,7 @@ rustPlatform.buildRustPackage {
   '';
 
   buildInputs = [
+    pam
     x264
     libyuv
     libopus

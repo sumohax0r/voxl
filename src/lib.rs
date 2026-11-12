@@ -5,6 +5,7 @@
 //! `tembo voxl`) embed the server the same way.
 
 mod access;
+mod account_login;
 #[cfg(target_os = "linux")]
 mod audio;
 #[cfg(target_os = "linux")]
@@ -27,6 +28,7 @@ mod login;
 mod mac;
 mod mic;
 mod mp4;
+mod os_auth;
 mod record;
 mod record_audio;
 #[cfg(target_os = "linux")]
@@ -441,9 +443,29 @@ async fn serve(a: HashMap<String, String>) {
     ));
     // The login (see login.rs): a password, given or made up at startup, unless
     // --enable-basic-auth=false.
-    let login =
-        login::Login::from_args(&a).map(|(l, generated)| (std::sync::Arc::new(l), generated));
+    let accounts = account_login::Accounts::from_args(&a);
+    let login = if accounts.is_some() {
+        None
+    } else {
+        login::Login::from_args(&a).map(|(l, generated)| (std::sync::Arc::new(l), generated))
+    };
+    let mut state = state;
+    if accounts.is_some() {
+        state.index = bytes::Bytes::from(
+            String::from_utf8(state.index.to_vec())
+                .expect("HTML")
+                .replace(
+                    "</head>",
+                    "<script src=\"/auth/session.js\" defer></script></head>",
+                ),
+        );
+    }
     let mut app = server::router(state);
+    if let Some(accounts) = &accounts {
+        app = app.merge(account_login::routes(accounts.clone())).layer(
+            axum::middleware::from_fn_with_state(accounts.clone(), account_login::check),
+        );
+    }
     if let Some((l, _)) = &login {
         app = app.layer(axum::middleware::from_fn_with_state(
             l.clone(),
@@ -471,6 +493,7 @@ async fn serve(a: HashMap<String, String>) {
         Some((_, false)) => log::info!(
             "login on: sign in at {page} with the password, or open {page}?token=<password>"
         ),
+        None if accounts.is_some() => log::info!("OS account login: open {page} (HTTPS required for secure cookies)"),
         None => log::info!("login off (--enable-basic-auth=false): anyone who reaches {page} can use this desktop"),
     }
     use axum::serve::ListenerExt;

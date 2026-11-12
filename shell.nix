@@ -9,5 +9,5 @@ pkgs.mkShell {
   nativeBuildInputs = with pkgs;
     [pkg-config clang rustPlatform.bindgenHook esbuild typescript]
     ++ lib.optionals withRust [rustc cargo clippy rustfmt];
-  buildInputs = with pkgs; [x264 libyuv libopus libpulseaudio xorg.libX11 xorg.libXext xorg.libxcb];
+  buildInputs = with pkgs; [pam x264 libyuv libopus libpulseaudio xorg.libX11 xorg.libXext xorg.libxcb];
 }

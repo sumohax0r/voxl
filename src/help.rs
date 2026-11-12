@@ -17,6 +17,12 @@ Server:
   --allowed-origins             other sites whose pages may connect (* any)
 
 Login:
+  --auth-mode                  legacy (default) or os (operating-system accounts)
+  --auth-users                 comma-separated allowed OS accounts; required in os mode
+  --auth-pam-service           PAM policy: voxl on Linux, login on macOS
+  --auth-cookie-secure         secure session cookies (default true); false ONLY for
+                               local HTTP development behind a loopback binding
+                               OS mode ignores all legacy password/token options.
   --enable-basic-auth           ask for a password (default true)
   --basic-auth-password         the password (default: $VOXL_PASSWORD, else one is
                                 made up and printed at startup)

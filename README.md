@@ -84,7 +84,7 @@ frame being decoded. voxl's column is its best run of each test. To reproduce, s
 
 ## Usage
 
-Build (needs Rust, pkg-config, clang, x264, libyuv, libopus, libpulse and esbuild;
+Build (needs Rust, pkg-config, clang, x264, libyuv, libopus, libpulse, PAM development headers/libraries and esbuild;
 `nix-shell` provides them all):
 
 ```sh
@@ -369,3 +369,62 @@ encoding on macOS is in progress.
 
 **What's the license?** voxl's code is MIT. It links x264, which is GPL-2.0, so a voxl
 binary, and anything that bundles one, is distributed under the GPL.
+
+## Operating-system account login
+
+Use OS-account authentication instead of shareable password links:
+
+```sh
+voxl --auth-mode=os --auth-users=alice --allowed-hosts=voxl.example.com
+```
+
+On Windows, for example, use `--auth-users=ai`. Multiple accounts are comma-separated;
+Windows also accepts explicitly allowed `DOMAIN\user` or UPN names. Use the account
+password, not a Windows Hello PIN. On Unix account names are case-sensitive.
+Only listed accounts can sign in. Authentication authorizes access to the **existing
+shared desktop** with the server's permissions; it does not create a separate OS
+session, impersonate the user, or switch desktops.
+
+Serve Voxl through HTTPS, preserving the original Host header and WebSocket Origin.
+Keep the backend bound to loopback behind the reverse proxy. Cookies are Secure,
+HttpOnly and SameSite=Strict; credentials are sent only in a POST body and never
+stored by Voxl. Do not configure a proxy to log request bodies or Cookie headers.
+For loopback HTTP development only, use `--addr=127.0.0.1 --auth-cookie-secure=false`.
+OS mode ignores legacy Basic/Bearer passwords and URL tokens, even when old password
+flags remain in a launcher. Old token links redirect to `/` without authenticating.
+Legacy mode remains the default for compatibility; migrate launchers explicitly.
+
+The login form's **Advanced options** offer session validity of 15 minutes, 1 hour,
+8 hours (default), 1 day or 7 days, and inactivity locking after 1, 5, 15 (default),
+30 or 60 minutes. Locking revokes the browser session and closes all its desktop
+sockets. It does not lock Windows/macOS/Linux itself or other viewers' sessions.
+Only browser interaction refreshes the idle deadline; video and keepalives do not.
+A **Lock session** button ends the session immediately. Expiration is enforced on
+the server even for modified clients. Sessions live only in memory and are revoked
+on server restart; reauthentication creates a fresh random session ID. Login attempts
+are globally limited to five per minute, with at most two native checks concurrently.
+
+### Platform setup
+
+- **Windows:** uses `LogonUserW` with network logon; Windows account restrictions
+  and network-logon rights apply. No RDP configuration changes are needed.
+- **macOS:** uses the system PAM `login` policy (Open Directory password and account
+  checks). The server must have sufficient privileges for the configured PAM policy.
+- **Linux:** link with PAM (`libpam0g-dev` on Debian/Ubuntu, `pam-devel` on Fedora).
+  Install an administrator-owned `/etc/pam.d/voxl` policy appropriate to the distro.
+  For Debian/Ubuntu, a password-only example is:
+
+  ```text
+  @include common-auth
+  @include common-account
+  ```
+
+  On Fedora, use the site's approved `system-auth` policy. `--auth-pam-service=NAME`
+  selects a different administrator-managed policy. No policy is installed or changed
+  automatically. PAM must support password authentication and permit the Voxl service
+  account to verify the allowed users. Both authentication and account checks must
+  succeed; expired passwords must be changed outside Voxl. Interactive MFA/password
+  change conversations are not supported by this username/password form.
+
+Validate a permitted account and a denied account on each deployment before retiring
+its previous access path. The OS adapter does not change account passwords or RDP.

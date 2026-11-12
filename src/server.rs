@@ -205,13 +205,24 @@ async fn stats(State(s): State<AppState>) -> Response {
         .into_response()
 }
 
-async fn ws_handler(ws: WebSocketUpgrade, State(s): State<AppState>) -> Response {
+async fn ws_handler(
+    ws: WebSocketUpgrade,
+    State(s): State<AppState>,
+    session: Option<axum::Extension<crate::account_login::SessionGuard>>,
+) -> Response {
     ws.max_message_size(64 << 20)
-        .on_upgrade(move |socket| handle_socket(socket, s))
+        .on_upgrade(move |socket| handle_socket(socket, s, session.map(|s| s.0)))
 }
 
-async fn handle_socket(socket: WebSocket, s: AppState) {
+async fn handle_socket(
+    socket: WebSocket,
+    s: AppState,
+    session: Option<crate::account_login::SessionGuard>,
+) {
     use futures_util::{SinkExt, StreamExt};
+    if session.as_ref().is_some_and(|s| !s.valid()) {
+        return;
+    }
     let (mut sink, mut stream) = socket.split();
     let (tx, mut rx) = mpsc::unbounded_channel::<Out>();
     let client = {
@@ -238,9 +249,13 @@ async fn handle_socket(socket: WebSocket, s: AppState) {
         client.send(Out::Bin(c));
     }
     let settings = s.settings.clone();
+    let writer_session = session.clone();
     let writer = tokio::spawn(async move {
         let dbg = std::env::var("VOXL_DEBUG_MARKER").is_ok();
         while let Some(m) = rx.recv().await {
+            if writer_session.as_ref().is_some_and(|s| !s.valid()) {
+                break;
+            }
             // The settings panel can stop the desktop's clipboard going out.
             if is_clipboard(&m) && !settings.clip_out() {
                 continue;
@@ -277,7 +292,22 @@ async fn handle_socket(socket: WebSocket, s: AppState) {
         })
     };
     let mut rtts: std::collections::VecDeque<u32> = Default::default();
-    while let Some(Ok(msg)) = stream.next().await {
+    let mut expiry = tokio::time::interval(Duration::from_millis(250));
+    loop {
+        let msg = tokio::select! {
+            biased;
+            _ = expiry.tick() => {
+                if session.as_ref().is_some_and(|s| !s.valid()) { break; }
+                continue;
+            }
+            msg = stream.next() => msg,
+        };
+        let Some(Ok(msg)) = msg else {
+            break;
+        };
+        if session.as_ref().is_some_and(|s| !s.valid()) {
+            break;
+        }
         match msg {
             Message::Text(t) => handle_text(&s, &client, t.as_str(), &mut rtts),
             // Every binary message from a viewer acts on the desktop (clipboard images,
