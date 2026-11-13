@@ -1,0 +1,6 @@
+LIBRARY voxl-logon
+EXPORTS
+    DllGetClassObject PRIVATE
+    DllCanUnloadNow PRIVATE
+    VoxlSignIn
+    VoxlRdpBusy

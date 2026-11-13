@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.20)
 project(VoxlLogon LANGUAGES CXX)
-add_library(voxl-logon SHARED bridge.cpp)
+add_library(voxl-logon SHARED bridge.cpp exports.def)
 target_compile_features(voxl-logon PRIVATE cxx_std_17)
 target_compile_definitions(voxl-logon PRIVATE UNICODE _UNICODE)
 target_compile_options(voxl-logon PRIVATE /W4 /guard:cf)

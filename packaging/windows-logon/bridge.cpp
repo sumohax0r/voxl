@@ -4,7 +4,6 @@
 #include <windows.h>
 #include <credentialprovider.h>
 #include <ntsecapi.h>
-#include <winternl.h>
 #include <cstring>
 #include <cwchar>
 #include <wtsapi32.h>
@@ -265,6 +264,6 @@ public:
     IFACEMETHODIMP CreateInstance(IUnknown* outer,REFIID id,void** out) override{if(outer)return CLASS_E_NOAGGREGATION;auto p=new Provider;HRESULT hr=p->QueryInterface(id,out);p->Release();return hr;}
     IFACEMETHODIMP LockServer(BOOL lock) override{if(lock)++objects;else --objects;return S_OK;}
 };
-extern "C" __declspec(dllexport) HRESULT WINAPI DllGetClassObject(REFCLSID clsid,REFIID id,void** out){if(clsid!=CLSID_Voxl)return CLASS_E_CLASSNOTAVAILABLE;auto f=new Factory;HRESULT hr=f->QueryInterface(id,out);f->Release();return hr;}
-extern "C" __declspec(dllexport) HRESULT WINAPI DllCanUnloadNow(){return objects==0?S_OK:S_FALSE;}
+STDAPI DllGetClassObject(REFCLSID clsid,REFIID id,void** out){if(clsid!=CLSID_Voxl)return CLASS_E_CLASSNOTAVAILABLE;auto f=new Factory;HRESULT hr=f->QueryInterface(id,out);f->Release();return hr;}
+STDAPI DllCanUnloadNow(){return objects==0?S_OK:S_FALSE;}
 BOOL WINAPI DllMain(HINSTANCE instance,DWORD reason,LPVOID){if(reason==DLL_PROCESS_ATTACH)DisableThreadLibraryCalls(instance);return TRUE;}
