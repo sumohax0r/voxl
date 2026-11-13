@@ -18,6 +18,7 @@ Server:
 
 Login:
   --auth-mode                  legacy (default) or os (operating-system accounts)
+  --windows-sign-in            also sign into Windows; requires installed logon bridge
   --auth-users                 comma-separated allowed OS accounts; required in os mode
   --auth-pam-service           PAM policy: voxl on Linux, login on macOS
   --auth-cookie-secure         secure session cookies (default true); false ONLY for

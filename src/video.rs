@@ -101,7 +101,9 @@ pub fn spawn(
     // connect and wake them), and start capturing once a viewer wants video.
     let first = match build(&cfg, &hub) {
         Ok(p) => Some(p),
-        Err(e) if displays_asleep() && !retry_cannot_fix(&e) => {
+        Err(e)
+            if (displays_asleep() || windows_capture_unavailable(&e)) && !retry_cannot_fix(&e) =>
+        {
             log::warn!("no video until a viewer wakes the displays: {e}");
             #[cfg(target_os = "macos")]
             {
@@ -136,8 +138,13 @@ pub fn spawn(
                     if resized {
                         log::info!("capture geometry changed: {e}");
                     } else {
-                        log::error!("capture loop ended: {e}");
-                        std::process::exit(1);
+                        #[cfg(windows)]
+                        log::warn!("Windows desktop changed; rebuilding capture: {e}");
+                        #[cfg(not(windows))]
+                        {
+                            log::error!("capture loop ended: {e}");
+                            std::process::exit(1);
+                        }
                     }
                 }
                 drop(cap);
@@ -167,6 +174,10 @@ pub fn spawn(
                 }
                 p = match build(&cfg, &hub) {
                     Ok(p) => p,
+                    Err(e) if windows_capture_unavailable(&e) => {
+                        log::warn!("waiting for Windows desktop: {e}");
+                        build_for_viewer(&cfg, &hub)
+                    }
                     Err(e) => {
                         log::error!("video restart failed: {e}");
                         std::process::exit(1);
@@ -178,6 +189,20 @@ pub fn spawn(
         })
         .unwrap();
     Ok(())
+}
+
+/// A secure-desktop/display transition must not terminate the HTTP server and
+/// discard its cookies. Only retry capture failures, not bad encoder settings.
+fn windows_capture_unavailable(error: &str) -> bool {
+    cfg!(windows)
+        && [
+            "DuplicateOutput",
+            "D3D11CreateDevice",
+            "no display attached",
+            "timed out starting capture",
+        ]
+        .iter()
+        .any(|text| error.contains(text))
 }
 
 /// A capture error only a restart fixes: macOS grants Screen Recording to a process
@@ -240,7 +265,8 @@ fn build_for_viewer(cfg: &VideoConfig, hub: &Arc<Hub>) -> Pipeline {
                 std::process::exit(1);
             }
             Err(e) => {
-                if !displays_asleep()
+                if !windows_capture_unavailable(&e)
+                    && !displays_asleep()
                     && awake_since.get_or_insert_with(Instant::now).elapsed()
                         >= Duration::from_secs(30)
                 {

@@ -189,8 +189,7 @@
 				pointer-events: auto;
 			}
 			#tools.touch {
-				top: auto;
-				bottom: 12px;
+				top: 8px;
 			}
 			#display-select {
 				max-width: 170px;
@@ -218,6 +217,9 @@
 				transition:
 					transform 0.15s ease-out,
 					background-color 0.15s ease-out;
+			}
+			#lock-session-btn[hidden] {
+				display: none;
 			}
 			.ib:hover {
 				background: var(--state-hover);
@@ -730,9 +732,7 @@
 				display: flex;
 			}
 			#tools.touch ~ #users {
-				top: auto;
-				bottom: 64px;
-				flex-direction: column-reverse;
+				top: 64px;
 			}
 			#users-note,
 			#users-panel {
@@ -1257,6 +1257,29 @@
 						stroke-width="2"
 						stroke-linecap="round"
 						stroke-linejoin="round" />
+				</svg>
+			</button>
+			<button
+				id="lock-session-btn"
+				class="ib"
+				type="button"
+				hidden
+				title="Lock Voxl session"
+				aria-label="Lock Voxl session">
+				<svg class="i" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+					<rect
+						x="5"
+						y="10"
+						width="14"
+						height="11"
+						rx="2"
+						stroke="currentColor"
+						stroke-width="2" />
+					<path
+						d="M8 10V7a4 4 0 0 1 8 0v3M12 14v3"
+						stroke="currentColor"
+						stroke-width="2"
+						stroke-linecap="round" />
 				</svg>
 			</button>
 			<button

@@ -1,4 +1,4 @@
-// Toolbar (top right on hover; bottom right and always visible on touch devices):
+// Toolbar (top right on hover; always visible at the top on touch devices):
 // people here, on-screen keyboard, files, microphone, display, settings and
 // fullscreen buttons.
 import { cmd } from '../protocol';

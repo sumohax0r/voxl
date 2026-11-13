@@ -1,6 +1,7 @@
 Voxl combined Windows build (x64)
 
-Includes the combined desktop features and OS-account authentication.
+Includes combined desktop features, OS-account authentication, and an opt-in
+Windows interactive logon bridge.
 See BUILD-INFO.txt for the exact source revision and SHA256SUMS.txt for integrity.
 This executable is not code-signed.
 
@@ -14,8 +15,12 @@ Deploy to WG-S002 using your existing RDP connection:
    Use the exact Windows account name you intend to allow. You can remove the
    legacy --basic-auth-password option; OS mode ignores it and URL tokens.
    Keep --enable-resize=true and the current SYSTEM session supervisor.
-6. Start VoxlSystemSupervisor again.
-7. Open https://voxl.wholesomegoods.com/ with no token. Sign in using the Windows
+6. For automatic Windows sign-in, review WINDOWS-LOGON.txt and run the included
+   install-windows-logon.ps1 elevated. Add --windows-sign-in=true to the launcher.
+   Run Voxl as SYSTEM in the console session. The provider preserves ordinary
+   Windows sign-in and refuses to take over RDP or another signed-in session.
+7. Start VoxlSystemSupervisor again.
+8. Open https://voxl.wholesomegoods.com/ with no token. Sign in using the Windows
    account password (not its PIN). Verify video, input, resizing, and Lock session.
 
 The existing HTTPS proxy must preserve the Host and WebSocket Origin headers.
@@ -23,9 +28,12 @@ Secure cookies are enabled by default. Do not disable them for the public site.
 
 Advanced login options control session duration and inactivity locking.
 Locking ends the browser session, not Windows itself or other viewers' sessions.
-OS authentication grants access to the existing shared desktop; it does not create
-separate Windows sessions. It does not change RDP settings or OS account passwords.
+With --windows-sign-in, Voxl opens the allowed account on the console when no
+conflicting session exists. It does not provide simultaneous isolated desktops. It does not change RDP settings or OS account passwords.
 
 Rollback: stop the supervisor and voxl.exe, restore the backed-up executable and
 launcher, then start the supervisor again. Keep both backups until sign-in and
 normal desktop operation have been verified on the host.
+
+Bridge rollback: run uninstall-windows-logon.ps1 and remove --windows-sign-in.
+The shared DLL can remain loaded until the next sign-out; do not delete it in use.

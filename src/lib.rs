@@ -41,6 +41,8 @@ mod wait;
 mod wayland;
 #[cfg(windows)]
 mod win;
+#[cfg(windows)]
+mod windows_logon;
 
 // The macOS and Windows backends provide the same modules with the same interfaces.
 #[cfg(target_os = "macos")]
@@ -248,7 +250,10 @@ async fn serve(a: HashMap<String, String>) {
     let read_only = truthy(a.get("read-only"), false) || wayland_on;
     // --enable-resize (as in selkies): clients resize the desktop to their window. Not
     // for read-only viewers: a new size changes the desktop for everyone.
-    let enable_resize = truthy(a.get("enable-resize"), false);
+    let manual_resolution = cfg!(windows) && truthy(a.get("manual-resolution"), false);
+    let enable_resize = truthy(a.get("enable-resize"), false) || manual_resolution;
+    #[cfg(windows)]
+    screen::persist_manual_modes(manual_resolution);
     if enable_resize && read_only {
         log::warn!("--enable-resize is ignored with --read-only: viewers can't resize the desktop");
     }
@@ -417,6 +422,9 @@ async fn serve(a: HashMap<String, String>) {
         clip_out,
         audio_on,
     );
+    if manual_resolution {
+        settings.manual_resolution();
+    }
     let state = server::AppState {
         hub: hub.clone(),
         audio: audio_on,

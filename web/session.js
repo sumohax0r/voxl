@@ -52,19 +52,20 @@ addEventListener('pageshow', () => {
 	void request('/auth/status');
 });
 addEventListener('DOMContentLoaded', () => {
-	const button = document.createElement('button');
-	button.textContent = 'Lock session';
-	button.title = 'End this browser session and require your password again';
-	button.style.cssText =
-		'position:fixed;bottom:12px;right:12px;z-index:10000;padding:8px 12px;border-radius:8px;border:1px solid #657080;background:#202328;color:white;cursor:pointer;font:13px system-ui';
+	const button = document.getElementById('lock-session-btn');
+	if (!button) return;
+	button.hidden = false;
+	const label = 'Lock Voxl session — require your password again';
+	button.title = label;
+	button.addEventListener('pointerdown', (event) => event.stopPropagation());
 	button.addEventListener('click', async () => {
 		button.disabled = true;
 		const response = await request('/auth/logout', 'POST');
 		if (response?.ok) showLogin();
 		else {
 			button.disabled = false;
-			button.textContent = 'Lock failed — retry';
+			button.title = 'Lock failed — click to retry';
+			button.setAttribute('aria-label', button.title);
 		}
 	});
-	document.body.append(button);
 });

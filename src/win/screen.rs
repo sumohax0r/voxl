@@ -1,14 +1,15 @@
 //! Dynamic resolution on Windows: switches the captured display to the mode that best
 //! fits the viewer's window. Displays only offer fixed modes (a VM's virtual display
 //! offers many), so the desktop takes the largest one that fits rather than the exact
-//! size. Changes are temporary (CDS_FULLSCREEN): Windows restores the user's mode
-//! when voxl exits, even on a crash.
+//! size. Automatic changes are temporary (CDS_FULLSCREEN). Manual mode saves
+//! explicit choices to the Windows display database instead.
 
 use parking_lot::Mutex;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
 use windows::core::PCWSTR;
 use windows::Win32::Graphics::Gdi::{
-    ChangeDisplaySettingsExW, EnumDisplaySettingsW, CDS_FULLSCREEN, DEVMODEW,
+    ChangeDisplaySettingsExW, EnumDisplaySettingsW, CDS_FULLSCREEN, CDS_UPDATEREGISTRY, DEVMODEW,
     DISP_CHANGE_SUCCESSFUL, DM_BITSPERPEL, DM_DISPLAYFREQUENCY, DM_PELSHEIGHT, DM_PELSWIDTH,
     ENUM_CURRENT_SETTINGS, ENUM_DISPLAY_SETTINGS_MODE,
 };
@@ -19,6 +20,13 @@ pub const MIN: (u32, u32) = (640, 480);
 /// Most pixels a mode may have to be offered (x264's cost grows with area), unless it
 /// is the current one.
 const MAX_PIXELS: u64 = 2560 * 1600;
+
+static PERSIST_MANUAL: AtomicBool = AtomicBool::new(false);
+
+/// Only explicit user-selected modes are saved to the Windows display database.
+pub fn persist_manual_modes(enabled: bool) {
+    PERSIST_MANUAL.store(enabled, Ordering::Relaxed);
+}
 
 /// Sizes of the selectable modes, for `fit`.
 static SIZES: Mutex<Vec<(u32, u32)>> = Mutex::new(Vec::new());
@@ -143,7 +151,11 @@ impl Screen {
                 PCWSTR(self.device.as_ptr()),
                 Some(&m),
                 None,
-                CDS_FULLSCREEN,
+                if PERSIST_MANUAL.load(Ordering::Relaxed) {
+                    CDS_UPDATEREGISTRY
+                } else {
+                    CDS_FULLSCREEN
+                },
                 None,
             )
         };
