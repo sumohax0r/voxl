@@ -31,7 +31,7 @@ struct Handle {
     Handle(const Handle&)=delete; Handle& operator=(const Handle&)=delete;
 };
 static bool systemToken(HANDLE token) {
-    BYTE data[512]; DWORD n=0;
+    alignas(TOKEN_USER) BYTE data[512]; DWORD n=0;
     return GetTokenInformation(token,TokenUser,data,sizeof(data),&n) &&
         IsWellKnownSid(reinterpret_cast<TOKEN_USER*>(data)->User.Sid,WinLocalSystemSid);
 }
@@ -44,6 +44,7 @@ static bool rdpBusy() {
     if(!WTSEnumerateSessionsW(WTS_CURRENT_SERVER_HANDLE,0,1,&sessions,&count)) return true;
     bool busy=false;
     for(DWORD i=0;i<count;i++) {
+        if(sessions[i].SessionId==WTSGetActiveConsoleSessionId())continue;
         if(sessions[i].State!=WTSActive && sessions[i].State!=WTSConnected && sessions[i].State!=WTSConnectQuery) continue;
         LPWSTR data=nullptr; DWORD size=0;
         if(!WTSQuerySessionInformationW(WTS_CURRENT_SERVER_HANDLE,sessions[i].SessionId,WTSClientProtocolType,&data,&size)) {busy=true;break;}
@@ -91,7 +92,7 @@ static bool logonToken(const Request& r, HANDLE* token) {
         LOGON32_LOGON_INTERACTIVE,LOGON32_PROVIDER_DEFAULT,token)!=FALSE;
 }
 static bool sameUser(HANDLE a,HANDLE b) {
-    BYTE aa[1024],bb[1024];DWORD n=0;
+    alignas(TOKEN_USER) BYTE aa[1024],bb[1024];DWORD n=0;
     return GetTokenInformation(a,TokenUser,aa,sizeof(aa),&n) && GetTokenInformation(b,TokenUser,bb,sizeof(bb),&n) &&
         EqualSid(reinterpret_cast<TOKEN_USER*>(aa)->User.Sid,reinterpret_cast<TOKEN_USER*>(bb)->User.Sid);
 }
@@ -165,7 +166,7 @@ extern "C" __declspec(dllexport) DWORD WINAPI VoxlAccountOwnsConsole(PCWSTR user
     }
     BYTE sid[SECURITY_MAX_SID_SIZE];DWORD sidSize=sizeof(sid);WCHAR domain[256];DWORD domainSize=256;SID_NAME_USE use;
     if(!LookupAccountNameW(nullptr,name.c_str(),sid,&sidSize,domain,&domainSize,&use) || use!=SidTypeUser)return 0;
-    Handle token;BYTE data[1024];DWORD size=0;
+    Handle token;alignas(TOKEN_USER) BYTE data[1024];DWORD size=0;
     return WTSQueryUserToken(WTSGetActiveConsoleSessionId(),&token.h) &&
         GetTokenInformation(token.h,TokenUser,data,sizeof(data),&size) &&
         EqualSid(sid,reinterpret_cast<TOKEN_USER*>(data)->User.Sid)?1:0;
@@ -235,7 +236,9 @@ class Provider final : public ICredentialProvider {
         if(sd) while(WaitForSingleObject(self->stop,0)==WAIT_TIMEOUT) {
             Handle pipe(CreateNamedPipeW(pipeName().c_str(),PIPE_ACCESS_DUPLEX|FILE_FLAG_OVERLAPPED|FILE_FLAG_FIRST_PIPE_INSTANCE,
                 PIPE_TYPE_MESSAGE|PIPE_READMODE_MESSAGE|PIPE_WAIT|PIPE_REJECT_REMOTE_CLIENTS,1,sizeof(DWORD),sizeof(Request),0,&sa));
-            if(pipe.h==INVALID_HANDLE_VALUE) break;
+            // A client can still hold the previous pipe while Windows completes
+            // sign-in. Keep serving retries after it releases that instance.
+            if(pipe.h==INVALID_HANDLE_VALUE) {WaitForSingleObject(self->stop,100);continue;}
             Handle event(CreateEventW(nullptr,TRUE,FALSE,nullptr));OVERLAPPED ov{};ov.hEvent=event.h;
             BOOL connected=ConnectNamedPipe(pipe.h,&ov);DWORD err=connected?ERROR_SUCCESS:GetLastError();
             if(err==ERROR_IO_PENDING){HANDLE waits[]={self->stop,event.h};if(WaitForMultipleObjects(2,waits,FALSE,INFINITE)!=WAIT_OBJECT_0+1){CancelIoEx(pipe.h,&ov);DWORD n;GetOverlappedResult(pipe.h,&ov,&n,TRUE);break;}DWORD n;connected=GetOverlappedResult(pipe.h,&ov,&n,FALSE);}
