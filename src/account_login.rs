@@ -107,7 +107,7 @@ impl Accounts {
     }
     fn valid(&self, id: &str, touch: bool) -> bool {
         #[cfg(windows)]
-        if self.desktop_sign_in && !crate::windows_logon::available() {
+        if self.desktop_sign_in && !crate::windows_logon::available(&self.users[0]) {
             self.sessions.lock().clear();
             return false;
         }
@@ -246,8 +246,11 @@ async fn login(
     })
     .await
     .unwrap_or(4);
-    if result == 1 || result == 6 {
-        return private((StatusCode::CONFLICT, "A Windows or RDP session is already in use. Leave it connected, or disconnect it yourself before signing in to Voxl.").into_response());
+    if result == 1 {
+        return private((StatusCode::CONFLICT, "An RDP connection is active. Voxl will not interrupt it. Its user must disconnect before Windows sign-in can proceed.").into_response());
+    }
+    if result == 6 {
+        return private((StatusCode::CONFLICT, "Windows has an existing session that Voxl will not take over. Sign out of that session before continuing.").into_response());
     }
     if result == 2 || result == 4 || result == 5 {
         return private((StatusCode::SERVICE_UNAVAILABLE, "Windows desktop sign-in is unavailable or did not finish. No browser session was opened.").into_response());

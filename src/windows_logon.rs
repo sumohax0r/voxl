@@ -4,10 +4,10 @@ use std::sync::{Mutex, OnceLock};
 use std::time::{Duration, Instant};
 
 type SignIn = unsafe extern "system" fn(*const u16, *const u16) -> u32;
-type Busy = unsafe extern "system" fn() -> u32;
+type Ready = unsafe extern "system" fn(*const u16) -> u32;
 struct Bridge {
     sign_in: SignIn,
-    busy: Busy,
+    ready: Ready,
 }
 #[link(name = "kernel32")]
 unsafe extern "system" {
@@ -36,14 +36,14 @@ fn bridge() -> Option<&'static Bridge> {
                     return None;
                 }
                 let sign_in = GetProcAddress(module, c"VoxlSignIn".as_ptr().cast());
-                let busy = GetProcAddress(module, c"VoxlRdpBusy".as_ptr().cast());
-                if sign_in.is_null() || busy.is_null() {
+                let ready = GetProcAddress(module, c"VoxlAccountOwnsConsole".as_ptr().cast());
+                if sign_in.is_null() || ready.is_null() {
                     return None;
                 }
                 // The module remains loaded for the process lifetime.
                 Some(Bridge {
                     sign_in: std::mem::transmute::<*mut std::ffi::c_void, SignIn>(sign_in),
-                    busy: std::mem::transmute::<*mut std::ffi::c_void, Busy>(busy),
+                    ready: std::mem::transmute::<*mut std::ffi::c_void, Ready>(ready),
                 })
             }
         })
@@ -68,15 +68,16 @@ pub fn sign_in(user: &str, password: &str) -> u32 {
 }
 /// A newly connected RDP viewer also revokes existing browser access. Cache the
 /// query briefly, rather than enumerate Windows sessions for every video packet.
-pub fn available() -> bool {
-    static CHECK: Mutex<Option<(Instant, bool)>> = Mutex::new(None);
+pub fn available(user: &str) -> bool {
+    static CHECK: Mutex<Option<(Instant, String, bool)>> = Mutex::new(None);
     let mut check = CHECK.lock().unwrap_or_else(|e| e.into_inner());
-    if let Some((at, available)) = *check {
-        if at.elapsed() < Duration::from_millis(200) {
-            return available;
+    if let Some((at, name, available)) = check.as_ref() {
+        if name == user && at.elapsed() < Duration::from_millis(200) {
+            return *available;
         }
     }
-    let available = bridge().is_some_and(|b| unsafe { (b.busy)() == 0 });
-    *check = Some((Instant::now(), available));
+    let wide: Vec<u16> = user.encode_utf16().chain(Some(0)).collect();
+    let available = bridge().is_some_and(|b| unsafe { (b.ready)(wide.as_ptr()) == 1 });
+    *check = Some((Instant::now(), user.to_owned(), available));
     available
 }

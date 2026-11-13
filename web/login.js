@@ -32,7 +32,7 @@ form.addEventListener('submit', async (event) => {
 			response.status === 429
 				? 'Too many attempts. Wait a minute and try again.'
 				: response.status === 409
-					? 'A Windows or RDP session is already in use. Disconnect it yourself before signing in here.'
+					? await response.text()
 					: response.status === 503
 						? 'Windows desktop sign-in is unavailable or did not finish. Please try again.'
 						: 'Sign-in failed. Check your username and password, or ask the host administrator.';
