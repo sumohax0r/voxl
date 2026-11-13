@@ -428,3 +428,13 @@ are globally limited to five per minute, with at most two native checks concurre
 
 Validate a permitted account and a denied account on each deployment before retiring
 its previous access path. The OS adapter does not change account passwords or RDP.
+
+### Windows manual resolution
+
+Use `--manual-resolution=true` to keep the browser resolution picker without
+following browser window sizes. Explicit resolution changes are saved in the
+Windows display database and survive Voxl restarts. The browser fits the stream
+to its viewport. Text and control sizes remain a separate Windows setting under
+Settings → System → Display → Scale; the former resolution-based Scaling control
+is hidden in this mode. Other stream settings remain session-only. Existing
+`--enable-resize` behavior is unchanged when manual mode is not enabled.

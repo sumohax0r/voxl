@@ -52,6 +52,7 @@ pub struct Settings {
     /// The desktop follows the viewers' windows (with --enable-resize); off, it keeps
     /// the resolution picked in the panel.
     auto_resize: AtomicBool,
+    manual_resolution: AtomicBool,
     /// The video settings voxl started with, which the Auto choices go back to.
     initial: Option<crate::video::VideoConfig>,
     /// Smoothness on Auto: --framerate's rate, with flow control dropping frames when
@@ -97,12 +98,19 @@ impl Settings {
             clip_out: AtomicBool::new(clip_out),
             audio,
             auto_resize: AtomicBool::new(true),
+            manual_resolution: AtomicBool::new(false),
             initial_audio,
             native,
             initial_scale,
             initial,
             auto_framerate: AtomicBool::new(true),
         })
+    }
+
+    /// Manual mode keeps the picker but refuses viewport-driven resolution changes.
+    pub fn manual_resolution(&self) {
+        self.manual_resolution.store(true, Ordering::Relaxed);
+        self.auto_resize.store(false, Ordering::Relaxed);
     }
 
     /// Whether the desktop takes clipboard contents from viewers right now.
@@ -179,6 +187,7 @@ impl Settings {
             "limits": {
                 "audio": self.audio,
                 "resize": self.resize_scale().is_some(),
+                "manual_resolution": self.manual_resolution.load(Ordering::Relaxed),
                 "clipboard_in": self.clip_in_allowed,
                 "clipboard_out": self.clip_out_allowed,
                 "upload": self.files.upload,
@@ -346,14 +355,20 @@ impl Settings {
                 let s = num(1.0, self.recorder.max.as_secs() as f64)? as u64;
                 self.recorder.limit_secs.store(s, Ordering::Relaxed);
             }
-            "resize_scale" if self.resize_scale().is_some() => {
+            "resize_scale"
+                if self.resize_scale().is_some()
+                    && !self.manual_resolution.load(Ordering::Relaxed) =>
+            {
                 let s = num(0.5, 4.0)?;
                 self.hub
                     .hello_extra
                     .lock()
                     .insert("resize".into(), json!({ "scale": s }));
             }
-            "auto_resize" if self.resize_scale().is_some() => {
+            "auto_resize"
+                if self.resize_scale().is_some()
+                    && !self.manual_resolution.load(Ordering::Relaxed) =>
+            {
                 self.auto_resize.store(flag()?, Ordering::Relaxed);
             }
             // A fixed size from the panel's menu; the desktop stops following windows.
@@ -512,6 +527,26 @@ mod tests {
         s.set("max_record_seconds", "60").unwrap();
         assert_eq!(s.recorder.max_len(), Duration::from_secs(60));
         assert!(s.set("max_record_seconds", "301").is_err());
+    }
+
+    #[test]
+    fn manual_resolution_keeps_picker_but_rejects_automatic_resize() {
+        let s = settings(true, 0);
+        s.hub
+            .hello_extra
+            .lock()
+            .insert("resize".into(), json!({"scale": 1.5}));
+        *s.hub.resize_sizes.lock() = vec![(1920, 1080), (2560, 1440)];
+        s.manual_resolution();
+        assert!(!s.auto_resize());
+        assert!(s.set("auto_resize", "true").is_err());
+        assert!(s.set("resize_scale", "2").is_err());
+        s.set("resolution", "2560x1440").unwrap();
+        assert!(!s.auto_resize());
+        let m: Value = serde_json::from_str(&s.message()).unwrap();
+        assert_eq!(m["limits"]["manual_resolution"], true);
+        assert_eq!(m["limits"]["resize"], true);
+        assert!(s.set("resolution", "9999x9999").is_err());
     }
 
     #[test]

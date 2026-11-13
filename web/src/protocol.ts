@@ -86,6 +86,7 @@ export interface SettingsMessage {
 	limits: {
 		audio: boolean;
 		resize: boolean;
+		manual_resolution?: boolean;
 		clipboard_in: boolean;
 		clipboard_out: boolean;
 		upload: boolean;

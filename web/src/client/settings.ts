@@ -619,7 +619,9 @@ export function createSettings(
 		resolution = select(
 			'Resolution',
 			[
-				[AUTO, 'Auto · fits your window'],
+				...(l.manual_resolution
+					? []
+					: [[AUTO, 'Auto · fits your window'] as [string, string]]),
 				// Biggest first, right under Auto.
 				...l.resolutions
 					.map((_, i, all) => all[all.length - 1 - i])
@@ -641,7 +643,7 @@ export function createSettings(
 		// Scaling, as an operating system has it: 200% shows everything twice as big,
 		// at half the desktop pixels per window pixel.
 		const base = l.scale_default;
-		if (base) {
+		if (base && !l.manual_resolution) {
 			const {
 				r: sr,
 				ctl: sctl,
@@ -671,6 +673,17 @@ export function createSettings(
 				disable: () => showDesk(),
 			});
 			sec.append(sr);
+		}
+		if (l.manual_resolution) {
+			const { r: fit } = row(
+				'Browser fit',
+				'Fits the desktop to this window without changing its resolution.'
+			);
+			const { r: text } = row(
+				'Text and controls',
+				'Change Windows Settings → System → Display → Scale. Text size is independent of resolution and saved by Windows.'
+			);
+			sec.append(fit, text);
 		}
 		return sec;
 	}
@@ -725,7 +738,8 @@ export function createSettings(
 					: `Auto · ${desk.replace('x', ' × ')}`;
 			return;
 		}
-		resolution.input.options[0].textContent = 'Auto · fits your window';
+		if (!msg?.limits.manual_resolution)
+			resolution.input.options[0].textContent = 'Auto · fits your window';
 		if (desk) resolution.set(desk);
 	}
 
@@ -881,7 +895,9 @@ export function createSettings(
 			? 'You’re watching only, so these can’t be changed here.'
 			: !app.inControl
 				? 'Only the viewer in control can change these.'
-				: 'Changes apply to everyone watching, until voxl restarts.';
+				: m.limits.manual_resolution
+					? 'Resolution is saved by Windows across restarts. Other stream settings last until Voxl restarts.'
+					: 'Changes apply to everyone watching, until voxl restarts.';
 	}
 
 	function onError(key: string, error: string) {
