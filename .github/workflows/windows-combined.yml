@@ -114,9 +114,12 @@ jobs:
           Copy-Item packaging\windows-logon\install.ps1 dist\install-windows-logon.ps1
           Copy-Item packaging\windows-logon\uninstall.ps1 dist\uninstall-windows-logon.ps1
           Copy-Item packaging\WINDOWS-DEPLOY.txt dist\README.txt
+          Copy-Item packaging\windows-logon\README.txt dist\WINDOWS-LOGON.txt
           @("Source: https://github.com/${{ github.repository }}", "Commit: $env:GITHUB_SHA", "Branch: $env:GITHUB_REF_NAME", "Target: x86_64-pc-windows-msvc", "Includes: combined, main, multi-user-presence, settings-panel, os-account-login", "Built: $([DateTime]::UtcNow.ToString('o'))") | Set-Content dist\BUILD-INFO.txt
-          $hash = (Get-FileHash dist\voxl.exe -Algorithm SHA256).Hash.ToLower()
-          "$hash  voxl.exe" | Set-Content dist\SHA256SUMS.txt
+          Get-ChildItem dist -File | ForEach-Object {
+            $hash = (Get-FileHash $_.FullName -Algorithm SHA256).Hash.ToLower()
+            "$hash  $($_.Name)"
+          } | Set-Content dist\SHA256SUMS.txt
       - uses: actions/upload-artifact@v4
         with:
           name: voxl-windows-combined-${{ github.sha }}
