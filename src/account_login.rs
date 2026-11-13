@@ -252,7 +252,7 @@ async fn login(
     if result == 6 {
         return private((StatusCode::CONFLICT, "Windows has an existing session that Voxl will not take over. Sign out of that session before continuing.").into_response());
     }
-    if result == 2 || result == 4 || result == 5 {
+    if result == 2 || result == 4 || result == 5 || result == 7 {
         return private((StatusCode::SERVICE_UNAVAILABLE, "Windows desktop sign-in is unavailable or did not finish. No browser session was opened.").into_response());
     }
     if result != 0 {

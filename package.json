@@ -8,7 +8,8 @@
 		"fmt:check": "oxfmt --check .",
 		"lint": "oxlint",
 		"typecheck": "tsc -p web && tsc -p web/tsconfig.worker.json && tsc -p web/tsconfig.worklet.json",
-		"check": "npm run fmt:check && npm run lint && npm run typecheck"
+		"check": "npm run fmt:check && npm run lint && npm run typecheck && npm run test:login",
+		"test:login": "node --test web/tests/login.test.cjs"
 	},
 	"devDependencies": {
 		"oxfmt": "0.76.0",

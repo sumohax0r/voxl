@@ -19,10 +19,13 @@ expired, conflicting and unavailable logons do not grant desktop access.
 
 Session policy:
 - Any active/connecting RDP session blocks automatic sign-in.
-- The same account in another session, including disconnected RDP, also blocks
-  sign-in. The user must explicitly sign out of that other session first.
+- A disconnected session belonging to the authenticated account is resumed.
+  Its open applications are preserved. The login page retries automatically
+  while the supervisor follows the console-session change.
 - Another account already on the console blocks sign-in.
-- Voxl never calls WTSConnectSession, tscon, logoff or disconnect on another session.
+- Voxl never disconnects an active RDP session or signs another user out.
+  WTSConnectSession is used only for the authenticated account after verifying
+  that its session is disconnected and no RDP viewer is active.
 - A newly active RDP connection revokes browser sessions; it is not disconnected.
 - Secure desktop changes and transient DXGI capture failures retry in the existing
   server process, preserving browser sessions and avoiding manual refresh.
@@ -30,7 +33,8 @@ Session policy:
 Verification required before production deployment:
 1. On an isolated Windows test machine, install without disabling system providers.
 2. Reject sign-in while an RDP session is active; verify RDP remains connected.
-3. Reject the target account's disconnected RDP session without modifying it.
+3. Resume the target account's disconnected session without closing its apps.
+   Verify the browser completes sign-in without a manual refresh.
 4. With no conflicting session, submit browser credentials from the signed-out
    console; verify Windows desktop appears and video/input recover without reload.
 5. Lock Windows and repeat; verify UAC, lock/unlock, wrong and disabled accounts.
