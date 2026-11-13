@@ -40,6 +40,8 @@ impl Session {
 }
 pub struct Accounts {
     verify_password: fn(&str, &str, &str) -> bool,
+    desktop_sign_in: bool,
+    open_desktop: fn(&str, &str) -> u32,
     users: Vec<String>,
     service: String,
     secure: bool,
@@ -72,7 +74,21 @@ impl Accounts {
             !users.is_empty(),
             "--auth-mode=os requires --auth-users with the accounts allowed to access this desktop"
         );
+        let desktop_sign_in = crate::truthy(args.get("windows-sign-in"), false);
+        assert!(
+            !desktop_sign_in || cfg!(windows),
+            "--windows-sign-in requires Windows"
+        );
+        assert!(
+            !desktop_sign_in || users.len() == 1,
+            "--windows-sign-in requires exactly one allowed account per shared console"
+        );
         Some(Arc::new(Self {
+            desktop_sign_in,
+            #[cfg(windows)]
+            open_desktop: crate::windows_logon::sign_in,
+            #[cfg(not(windows))]
+            open_desktop: |_, _| 4,
             verify_password: crate::os_auth::verify,
             users,
             service: args.get("auth-pam-service").cloned().unwrap_or_else(|| {
@@ -90,6 +106,11 @@ impl Accounts {
         }))
     }
     fn valid(&self, id: &str, touch: bool) -> bool {
+        #[cfg(windows)]
+        if self.desktop_sign_in && !crate::windows_logon::available() {
+            self.sessions.lock().clear();
+            return false;
+        }
         let now = Instant::now();
         let mut sessions = self.sessions.lock();
         sessions.retain(|_, s| s.valid_at(now));
@@ -203,13 +224,35 @@ async fn login(
     let verify = auth.verify_password;
     let duration = c.duration;
     let idle = c.idle;
-    let ok = tokio::task::spawn_blocking(move || {
+    let desktop_sign_in = auth.desktop_sign_in;
+    let open_desktop = auth.open_desktop;
+    let result = tokio::task::spawn_blocking(move || {
         let _permit = permit;
-        allowed && verify(&c.username, &c.password, &service)
+        let mut password = c.password.into_bytes();
+        let password_text = std::str::from_utf8(&password).unwrap_or_default();
+        let result = if !allowed || !verify(&c.username, password_text, &service) {
+            3
+        } else if desktop_sign_in {
+            open_desktop(&c.username, password_text)
+        } else {
+            0
+        };
+        for byte in &mut password {
+            unsafe {
+                std::ptr::write_volatile(byte, 0);
+            }
+        }
+        result
     })
     .await
-    .unwrap_or(false);
-    if !ok {
+    .unwrap_or(4);
+    if result == 1 || result == 6 {
+        return private((StatusCode::CONFLICT, "A Windows or RDP session is already in use. Leave it connected, or disconnect it yourself before signing in to Voxl.").into_response());
+    }
+    if result == 2 || result == 4 || result == 5 {
+        return private((StatusCode::SERVICE_UNAVAILABLE, "Windows desktop sign-in is unavailable or did not finish. No browser session was opened.").into_response());
+    }
+    if result != 0 {
         return private(
             (
                 StatusCode::UNAUTHORIZED,
@@ -556,6 +599,40 @@ mod http_tests {
         }
         assert!(auth.valid("valid", false));
     }
+    #[tokio::test]
+    async fn windows_conflict_and_failed_desktop_do_not_issue_cookies() {
+        for (open, status) in [
+            (
+                (|_: &str, _: &str| 1) as fn(&str, &str) -> u32,
+                StatusCode::CONFLICT,
+            ),
+            (
+                (|_, _| 4) as fn(&str, &str) -> u32,
+                StatusCode::SERVICE_UNAVAILABLE,
+            ),
+            (
+                (|_, _| 5) as fn(&str, &str) -> u32,
+                StatusCode::SERVICE_UNAVAILABLE,
+            ),
+        ] {
+            let (mut auth, _) = setup();
+            let config = Arc::get_mut(&mut auth).unwrap();
+            config.verify_password = |_, _, _| true;
+            config.desktop_sign_in = true;
+            config.open_desktop = open;
+            let response = routes(auth.clone()).oneshot(
+                request("/auth/login").method("POST")
+                    .header(header::ORIGIN, "https://localhost")
+                    .header("x-voxl-login", "1")
+                    .header(header::CONTENT_TYPE, "application/json")
+                    .body(Body::from(r#"{"username":"test","password":"correct","duration":3600,"idle":300}"#)).unwrap()
+            ).await.unwrap();
+            assert_eq!(response.status(), status);
+            assert!(!response.headers().contains_key(header::SET_COOKIE));
+            assert!(auth.sessions.lock().is_empty());
+        }
+    }
+
     #[tokio::test]
     async fn successful_login_issues_private_cookie_and_rotates_existing_session() {
         let (mut auth, _) = setup();

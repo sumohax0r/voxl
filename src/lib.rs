@@ -41,6 +41,8 @@ mod wait;
 mod wayland;
 #[cfg(windows)]
 mod win;
+#[cfg(windows)]
+mod windows_logon;
 
 // The macOS and Windows backends provide the same modules with the same interfaces.
 #[cfg(target_os = "macos")]

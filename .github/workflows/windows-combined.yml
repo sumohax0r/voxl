@@ -78,6 +78,15 @@ jobs:
             Remove-LocalUser -Name $name
             Remove-Item Env:\VOXL_TEST_OS_PASSWORD -ErrorAction SilentlyContinue
           }
+      - name: Build Windows logon bridge
+        shell: pwsh
+        run: |
+          cmake -S packaging/windows-logon -B target/windows-logon -A x64
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cmake --build target/windows-logon --config Release
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          ctest --test-dir target/windows-logon -C Release --output-on-failure
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Build executable
         run: cargo build --release --locked
       - name: Package executable and deployment instructions
@@ -87,6 +96,9 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Executable help check failed' }
           New-Item -ItemType Directory -Force dist | Out-Null
           Copy-Item target\release\voxl.exe dist\voxl.exe
+          Copy-Item target\windows-logon\Release\voxl-logon.dll dist\voxl-logon.dll
+          Copy-Item packaging\windows-logon\install.ps1 dist\install-windows-logon.ps1
+          Copy-Item packaging\windows-logon\uninstall.ps1 dist\uninstall-windows-logon.ps1
           Copy-Item packaging\WINDOWS-DEPLOY.txt dist\README.txt
           @("Source: https://github.com/${{ github.repository }}", "Commit: $env:GITHUB_SHA", "Branch: $env:GITHUB_REF_NAME", "Target: x86_64-pc-windows-msvc", "Includes: combined, main, multi-user-presence, settings-panel, os-account-login", "Built: $([DateTime]::UtcNow.ToString('o'))") | Set-Content dist\BUILD-INFO.txt
           $hash = (Get-FileHash dist\voxl.exe -Algorithm SHA256).Hash.ToLower()
