@@ -6,6 +6,20 @@ on:
 permissions:
   contents: read
 jobs:
+  logon-bridge:
+    runs-on: windows-2022
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build and test credential provider
+        shell: pwsh
+        run: |
+          cmake -S packaging/windows-logon -B build-logon -A x64
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cmake --build build-logon --config Release
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          ctest --test-dir build-logon -C Release --output-on-failure
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
   windows:
     runs-on: windows-2022
     timeout-minutes: 60

@@ -96,6 +96,19 @@ static bool sameUser(HANDLE a,HANDLE b) {
     return GetTokenInformation(a,TokenUser,aa,sizeof(aa),&n) && GetTokenInformation(b,TokenUser,bb,sizeof(bb),&n) &&
         EqualSid(reinterpret_cast<TOKEN_USER*>(aa)->User.Sid,reinterpret_cast<TOKEN_USER*>(bb)->User.Sid);
 }
+// Never migrate an existing user's session to the console. Besides displacing
+// an RDP client, that can change the Windows session ID under the streamer.
+static bool otherSession(HANDLE identity) {
+    PWTS_SESSION_INFOW sessions=nullptr;DWORD count=0;
+    if(!WTSEnumerateSessionsW(WTS_CURRENT_SERVER_HANDLE,0,1,&sessions,&count))return true;
+    bool conflict=false;
+    for(DWORD i=0;i<count;i++) {
+        if(sessions[i].SessionId==WTSGetActiveConsoleSessionId() || sessions[i].SessionId==0)continue;
+        Handle token;
+        if(WTSQueryUserToken(sessions[i].SessionId,&token.h) && sameUser(identity,token.h)){conflict=true;break;}
+    }
+    WTSFreeMemory(sessions);return conflict;
+}
 static bool unlocked() {
     HDESK d=OpenInputDesktop(0,FALSE,DESKTOP_READOBJECTS); if(!d) return false;
     WCHAR name[128]{};DWORD n=0;
@@ -111,6 +124,7 @@ extern "C" __declspec(dllexport) DWORD WINAPI VoxlSignIn(PCWSTR user,PCWSTR pass
     if(!user || !password || FAILED(StringCchCopyW(r.user,257,user)) || FAILED(StringCchCopyW(r.password,4097,password))) {SecureZeroMemory(&r,sizeof(r));return 3;}
     struct Wipe {Request& r;~Wipe(){SecureZeroMemory(&r,sizeof(r));}} wipe{r};
     Handle identity;if(!logonToken(r,&identity.h)) return 3;
+    if(otherSession(identity.h)) return 6;
     Handle current;
     if(WTSQueryUserToken(WTSGetActiveConsoleSessionId(),&current.h)) {
         if(!sameUser(identity.h,current.h)) return 6;
@@ -207,7 +221,7 @@ class Provider final : public ICredentialProvider {
             Request request{};DWORD result=4;bool offered=false;
             if(io(pipe.h,&request,sizeof(request),false) && validRequest(request) && onConsole()) {
                 if(rdpBusy())result=1;
-                else {Handle token;if(logonToken(request,&token.h)){offered=self->credential->offer(request);result=offered?0:4;}else result=3;}
+                else {Handle token;if(logonToken(request,&token.h)){if(otherSession(token.h))result=6;else {offered=self->credential->offer(request);result=offered?0:4;}}else result=3;}
             }
             SecureZeroMemory(&request,sizeof(request));
             bool sent=io(pipe.h,&result,sizeof(result),true);
